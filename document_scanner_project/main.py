@@ -77,6 +77,7 @@ def reorder(myPoints):
 
     return myPointsNew
 
+
 # Function for getting warp properties
 def getWarp(img, biggest):
     biggest = reorder(biggest)
@@ -87,10 +88,67 @@ def getWarp(img, biggest):
     matrix = cv2.getPerspectiveTransform(pts1, pts2)
     imgOutput = cv2.warpPerspective(img, matrix, (widthImg, heightImg))
 
-    # Cropping the output image
+    # Cropping the output image by shaving off 20 pixels from every edge
     imgCropped = imgOutput[20:imgOutput.shape[0] - 20, 20:imgOutput.shape[1] - 20]
+    imgCropped = cv2.resize(imgCropped, (widthImg, heightImg))
 
     return imgOutput
+
+
+# Takes a value for scale and an array of images. Stacks them.
+def stackImages(scale, imgArray):
+    # Get the amount of rows and columns
+    rows = len(imgArray)
+    cols = len(imgArray[0])
+
+    # Checks if imgArray[0] is an instance of a list
+    # Basically, checks to see if we're working with a 1D array or 2D array of images.
+    # We'll know it's a 2D array if the first element of imgArray is a list of images.
+    # If it's a list, assign True to rowsAvailable
+    rowsAvailable = isinstance(imgArray[0], list)
+
+    # Get the second dimension of each element of imgArray[0]
+    # If it's a 2D array, get the widths and heights of the first image.
+    # Otherwise, if it's a 1D array, get the width and height of the first image's first row.
+    # The values will be thrown out if it's a 1D array.
+    width = imgArray[0][0].shape[1]
+    # Get the first dimension of each element of imgArray[0]
+    height = imgArray[0][0].shape[0]
+
+    # If there are rows available, display the 2D array of images
+    if rowsAvailable:
+        for x in range(0, rows):
+            for y in range(0, cols):
+                if imgArray[x][y].shape[:2] == imgArray[0][0].shape[:2]:
+                    imgArray[x][y] = cv2.resize(imgArray[x][y], (0, 0), None, scale, scale)
+                else:
+                    imgArray[x][y] = cv2.resize(imgArray[x][y], (imgArray[0][0].shape[1], imgArray[0][0].shape[0]),
+                                                None, scale, scale)
+                if len(imgArray[x][y].shape) == 2:
+                    imgArray[x][y] = cv2.cvtColor(imgArray[x][y], cv2.COLOR_GRAY2BGR)
+        imageBlank = np.zeros((height, width, 3), np.uint8)
+        hor = [imageBlank] * rows
+        for x in range(0, rows):
+            hor[x] = np.hstack(imgArray[x])
+        ver = np.vstack(hor)
+    # Otherwise, display all the images in the 1D list given.
+    else:
+        # For every image
+        for x in range(0, rows):
+            # If image x's dimensions match image 0's dimensions, resize image x using the scale given.
+            if imgArray[x].shape[:2] == imgArray[0].shape[:2]:
+                imgArray[x] = cv2.resize(imgArray[x], (0, 0), None, scale, scale)
+            # Otherwise, resize image x to the size of image 0 before scaling it
+            else:
+                imgArray[x] = cv2.resize(imgArray[x], (imgArray[0].shape[1], imgArray[0].shape[0]), None, scale, scale)
+            # If image x has a length of 2(Only height and width, no colour),
+            # convert it so that it has a colour channel thingy
+            if len(imgArray[x].shape) == 2:
+                imgArray[x] = cv2.cvtColor(imgArray[x], cv2.COLOR_GRAY2BGR)
+        # Once all the images are nicely converted, stack them.
+        hor = np.hstack(imgArray)
+        ver = hor
+    return ver
 
 
 # Infinite loop for displaying frames captured by webcam
@@ -101,10 +159,21 @@ while True:
 
     imgThres = preProcessing(img)
     biggest = getContours(imgThres)
-    print(biggest)
-    imgWarped = getWarp(img, biggest)
+
+    # If there is a biggest, do what's necessary
+    if biggest.size != 0:
+        imgWarped = getWarp(img, biggest)
+        imageArray = ([img, imgThres],
+                      [imgContour, imgWarped])
+    # Otherwise, just display the normal images
+    else:
+        imageArray = ([img, imgThres],
+                      [img, img])
+
+    stackedImages = stackImages(0.6, imageArray)
+
     # Rotating the webcam for my particular device
-    cv2.imshow("Video", cv2.rotate(imgWarped, cv2.ROTATE_90_CLOCKWISE))
+    cv2.imshow("Video", cv2.rotate(stackedImages, cv2.ROTATE_90_CLOCKWISE))
     # If Q is pressed, quit the application
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
